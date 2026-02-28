@@ -163,20 +163,20 @@ function repartition_op(x::AbstractArray{T}, info::RepartitionInfo{N}) where {T,
 
     union_rank = MPI.Comm_rank(info.union_comm)
 
-    # Allocate output tensor for dst workers
+    # Allocate output tensor for dst workers (device-aware via similar)
     if info.dst_active
         out_shape = local_shape(info.global_shape, info.dst_partition.dims, info.dst_partition.coords)
-        y = zeros(T, out_shape...)
+        y = fill!(similar(x, out_shape...), zero(T))
     else
-        y = zeros(T, ntuple(_ -> 0, N)...)
+        y = fill!(similar(x, ntuple(_ -> 0, N)...), zero(T))
     end
 
     reqs = MPI.Request[]
 
     # Post all receives first (non-blocking)
-    recv_bufs = Vector{Array{T}}(undef, length(info.recvs))
+    recv_bufs = Vector{AbstractArray{T}}(undef, length(info.recvs))
     for (i, entry) in enumerate(info.recvs)
-        recv_bufs[i] = Array{T}(undef, entry.shape...)
+        recv_bufs[i] = similar(x, entry.shape...)
         if entry.partner_rank == union_rank
             # Self-copy: will handle separately
             continue
@@ -185,9 +185,9 @@ function repartition_op(x::AbstractArray{T}, info::RepartitionInfo{N}) where {T,
     end
 
     # Post all sends (non-blocking)
-    send_bufs = Vector{Array{T}}(undef, length(info.sends))
+    send_bufs = Vector{AbstractArray{T}}(undef, length(info.sends))
     for (i, entry) in enumerate(info.sends)
-        send_bufs[i] = collect(view(x, entry.local_range...))
+        send_bufs[i] = copyto!(similar(x, size(view(x, entry.local_range...))...), view(x, entry.local_range...))
         if entry.partner_rank == union_rank
             # Self-copy: find matching recv and copy directly
             for (j, rentry) in enumerate(info.recvs)

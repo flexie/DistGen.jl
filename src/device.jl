@@ -36,3 +36,29 @@ function device_copy!(dst::AbstractArray, dst_range::Tuple, src::AbstractArray, 
     copyto!(dst_view, src_view)
     return dst
 end
+
+# ─── Zygote-compatible, device-aware tensor creation ─────────────────────────
+#
+# These helpers create constant tensors (zeros, ones) on the same device as a
+# reference array. They are marked @non_differentiable so Zygote treats them
+# as constants — correct since no gradient should flow through the creation of
+# a zero/one-filled pad or normalization parameter.
+
+"""
+    _zeros_like(x::AbstractArray, sz...) -> AbstractArray
+
+Create a zero-filled array on the same device as `x` with shape `sz`.
+Non-differentiable (gradient is always zero).
+"""
+_zeros_like(x::AbstractArray{T}, sz...) where {T} = fill!(similar(x, sz...), zero(T))
+
+"""
+    _ones_like(x::AbstractArray, sz...) -> AbstractArray
+
+Create a one-filled array on the same device as `x` with shape `sz`.
+Non-differentiable (gradient is always zero).
+"""
+_ones_like(x::AbstractArray{T}, sz...) where {T} = fill!(similar(x, sz...), one(T))
+
+ChainRulesCore.@non_differentiable _zeros_like(::Any, ::Any...)
+ChainRulesCore.@non_differentiable _ones_like(::Any, ::Any...)

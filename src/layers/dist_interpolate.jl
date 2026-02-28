@@ -152,23 +152,8 @@ function dist_interpolate_up_forward(
     x::AbstractArray{T, 5},
     layer::DistInterpolateUp
 ) where {T}
-    # Step 1: Upsample ×2 via nearest-neighbor (trilinear requires NNlib support)
-    # NNlib.upsample_trilinear expects (W,H,D,C,N) and scale factors
-    # Use repeat-based nearest-neighbor as a simpler alternative
-    W, H, D, C, B = size(x)
-    # Nearest-neighbor ×2: repeat each element along spatial dims
-    y = similar(x, 2W, 2H, 2D, C, B)
-    for b in 1:B, c in 1:C, k in 1:D, j in 1:H, i in 1:W
-        val = x[i, j, k, c, b]
-        y[2i-1, 2j-1, 2k-1, c, b] = val
-        y[2i,   2j-1, 2k-1, c, b] = val
-        y[2i-1, 2j,   2k-1, c, b] = val
-        y[2i,   2j,   2k-1, c, b] = val
-        y[2i-1, 2j-1, 2k,   c, b] = val
-        y[2i,   2j-1, 2k,   c, b] = val
-        y[2i-1, 2j,   2k,   c, b] = val
-        y[2i,   2j,   2k,   c, b] = val
-    end
+    # Step 1: Upsample ×2 via nearest-neighbor using repeat (GPU-compatible, Zygote-differentiable)
+    y = repeat(x, inner=(2, 2, 2, 1, 1))
 
     # Step 2: Repartition if topology changes
     if layer.repartition_info !== nothing

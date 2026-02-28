@@ -226,9 +226,9 @@ function score_based_diffusion_loss(
     # Perturbed input
     x_noisy = x .+ sigma .* ε
 
-    # Time conditioning: embed sigma
+    # Time conditioning: embed sigma (device-aware, Zygote-compatible)
     batch_size = size(x)[end]
-    t_embed = fill(sigma, batch_size)
+    t_embed = _zeros_like(x, batch_size) .+ sigma
 
     # Score prediction: s_θ(x_noisy, σ)
     score_pred, st = model_forward(x_noisy, t_embed, ps, st)
@@ -265,9 +265,9 @@ function flow_matching_loss(
     # Target velocity (constant for OT paths)
     target_v = x1 .- x0
 
-    # Time conditioning
+    # Time conditioning (device-aware, Zygote-compatible)
     batch_size = size(x0)[end]
-    t_embed = fill(t, batch_size)
+    t_embed = _zeros_like(x0, batch_size) .+ t
 
     # Velocity prediction
     v_pred, st = model_forward(x_t, t_embed, ps, st)
@@ -297,7 +297,7 @@ function langevin_sample(
     for σ in sigmas
         α = step_size * (σ / sigmas[end])^2
         batch_size = shape[end]
-        t_embed = fill(σ, batch_size)
+        t_embed = _zeros_like(x, batch_size) .+ σ
 
         for _ in 1:n_steps
             score, st = model_forward(x, t_embed, ps, st)
@@ -327,7 +327,7 @@ function ode_sample(
 
     for i in 0:(n_steps - 1)
         t = T(i) / T(n_steps)
-        t_embed = fill(t, batch_size)
+        t_embed = _zeros_like(x, batch_size) .+ t
         v, st = model_forward(x, t_embed, ps, st)
         x = x .+ dt .* v  # Euler step
     end
@@ -583,22 +583,9 @@ function dist_karras_decoder_forward(
     ps::NamedTuple,
     layer::DistKarrasDecoder
 ) where {T}
-    # Upsample if needed: nearest-neighbor ×2
+    # Upsample if needed: nearest-neighbor ×2 (GPU-compatible, Zygote-differentiable)
     if layer.upsample
-        W, H, D, C, B = size(x)
-        x_up = similar(x, 2W, 2H, 2D, C, B)
-        for b in 1:B, c in 1:C, k in 1:D, j in 1:H, i in 1:W
-            val = x[i, j, k, c, b]
-            x_up[2i-1, 2j-1, 2k-1, c, b] = val
-            x_up[2i,   2j-1, 2k-1, c, b] = val
-            x_up[2i-1, 2j,   2k-1, c, b] = val
-            x_up[2i,   2j,   2k-1, c, b] = val
-            x_up[2i-1, 2j-1, 2k,   c, b] = val
-            x_up[2i,   2j-1, 2k,   c, b] = val
-            x_up[2i-1, 2j,   2k,   c, b] = val
-            x_up[2i,   2j,   2k,   c, b] = val
-        end
-        x = x_up
+        x = repeat(x, inner=(2, 2, 2, 1, 1))
     end
 
     # Residual path

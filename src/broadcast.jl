@@ -63,6 +63,9 @@ function broadcast_op(x::AbstractArray{T}, info::BroadcastInfo) where {T}
     shape = Tuple(shape_buf)
 
     # Broadcast the data
+    # NOTE: CPU allocation for non-src ranks is acceptable here — broadcast_op is used
+    # for weight broadcasting during init, not in the hot forward/backward path.
+    # For full GPU support, the src rank's array type would need to be communicated.
     if info.src_active
         y = copy(x)
     else

@@ -152,7 +152,8 @@ function dist_adaptive_groupnorm_forward(
     β_cond = ps.beta_weight * cond .+ ps.beta_bias
 
     # Apply group norm (without learnable affine — we use conditioning instead)
-    gn_ps = (scale=ones(T, C), bias=zeros(T, C))
+    # Device-aware, non-differentiable (constants: scale=1, bias=0)
+    gn_ps = (scale=_ones_like(x, C), bias=_zeros_like(x, C))
     x_norm, _ = layer.groupnorm(x, gn_ps, NamedTuple())
 
     # FiLM modulation

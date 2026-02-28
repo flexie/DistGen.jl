@@ -102,12 +102,12 @@ function pad_for_halo(x::AbstractArray{T, 5}, halo_info::HaloInfo{N}) where {T, 
         sz = size(y)
         if left > 0
             pad_sz = ntuple(i -> i == d ? left : sz[i], 5)
-            y = cat(zeros(T, pad_sz...), y; dims=d)
+            y = cat(_zeros_like(y, pad_sz...), y; dims=d)
         end
         if right > 0
             sz = size(y)
             pad_sz = ntuple(i -> i == d ? right : sz[i], 5)
-            y = cat(y, zeros(T, pad_sz...); dims=d)
+            y = cat(y, _zeros_like(y, pad_sz...); dims=d)
         end
     end
     return y
@@ -136,7 +136,7 @@ function dist_conv3d_forward(
     # Step 0: Concat ones channel if needed (Karras input block protection)
     if layer.concat_ones
         sz = size(x)
-        ones_ch = ones(T, sz[1], sz[2], sz[3], 1, sz[5])
+        ones_ch = _ones_like(x, sz[1], sz[2], sz[3], 1, sz[5])
         x = cat(ones_ch, x; dims=4)
     end
 

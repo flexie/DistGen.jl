@@ -127,12 +127,12 @@ function halo_exchange!(x::AbstractArray{T, M}, info::HaloInfo{N}) where {T, M, 
 
         # Pack and send (non-blocking)
         if left_halo > 0 && left_rank != MPI.PROC_NULL
-            left_send_buf = collect(view(x, left_send...))  # contiguous copy
+            left_send_buf = copyto!(similar(x, size(view(x, left_send...))...), view(x, left_send...))  # contiguous device-aware copy
             push!(reqs, MPI.Isend(left_send_buf, info.partition.comm; dest=left_rank, tag=0))
         end
 
         if right_halo > 0 && right_rank != MPI.PROC_NULL
-            right_send_buf = collect(view(x, right_send...))  # contiguous copy
+            right_send_buf = copyto!(similar(x, size(view(x, right_send...))...), view(x, right_send...))  # contiguous device-aware copy
             push!(reqs, MPI.Isend(right_send_buf, info.partition.comm; dest=right_rank, tag=1))
         end
 
@@ -211,12 +211,12 @@ function ChainRulesCore.rrule(::typeof(halo_exchange), x::AbstractArray{T, M}, i
 
                 # Send ghost gradients to neighbors
                 if left_halo > 0 && left_rank != MPI.PROC_NULL
-                    left_ghost_send = collect(view(x̄, left_recv...))
+                    left_ghost_send = copyto!(similar(x̄, size(view(x̄, left_recv...))...), view(x̄, left_recv...))
                     push!(reqs, MPI.Isend(left_ghost_send, info.partition.comm; dest=left_rank, tag=1))
                 end
 
                 if right_halo > 0 && right_rank != MPI.PROC_NULL
-                    right_ghost_send = collect(view(x̄, right_recv...))
+                    right_ghost_send = copyto!(similar(x̄, size(view(x̄, right_recv...))...), view(x̄, right_recv...))
                     push!(reqs, MPI.Isend(right_ghost_send, info.partition.comm; dest=right_rank, tag=0))
                 end
 
