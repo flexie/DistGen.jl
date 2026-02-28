@@ -151,17 +151,11 @@ function dist_upsample_forward(
 ) where {T}
     # Step 1: Local transposed convolution
     # For transposed conv, weight shape is (kW, kH, kD, C_out, C_in)
-    stride = collect(layer.kernel_size)
-    cdims = NNlib.DenseConvDims(
-        size(x), size(weight);
-        stride=stride,
-        padding=ntuple(_ -> 0, 6)
-    )
     # NNlib's ∇conv_data acts as transposed convolution
     # Output size = (input_size - 1) * stride + kernel_size
+    stride = collect(layer.kernel_size)
     out_spatial = ntuple(d -> (size(x, d) - 1) * stride[d] + layer.kernel_size[d], 3)
     y_size = (out_spatial..., layer.out_channels, size(x, 5))
-    y = zeros(T, y_size...)
 
     cdims_transp = NNlib.DenseConvDims(
         y_size, size(weight);
