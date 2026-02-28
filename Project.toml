@@ -1,0 +1,29 @@
+name = "DomainDecomposition"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+authors = ["Felix"]
+version = "0.1.0"
+
+[deps]
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
+
+[weakdeps]
+ParametricOperators = "00000000-0000-0000-0000-000000000001"
+
+[extensions]
+ParametricOperatorsExt = "ParametricOperators"
+
+[compat]
+ChainRulesCore = "1"
+KernelAbstractions = "0.9"
+MPI = "0.20"
+NNlib = "0.9"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
