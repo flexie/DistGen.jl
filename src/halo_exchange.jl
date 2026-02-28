@@ -179,7 +179,7 @@ function ChainRulesCore.rrule(::typeof(halo_exchange), x::AbstractArray{T, M}, i
     y = halo_exchange(x, info)
 
     function halo_exchange_pullback(ȳ)
-        x̄ = copy(ȳ)
+        x̄ = copy(ChainRulesCore.unthunk(ȳ))
 
         if info.partition.active
             # Adjoint: send ghost gradients to neighbors, accumulate into bulk

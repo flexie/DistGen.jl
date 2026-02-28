@@ -85,13 +85,14 @@ function ChainRulesCore.rrule(::typeof(broadcast_op), x::AbstractArray{T}, info:
     y = broadcast_op(x, info)
 
     function broadcast_pullback(ȳ)
+        ȳ_val = ChainRulesCore.unthunk(ȳ)
         if info.union_comm == MPI.COMM_NULL
-            return NoTangent(), ȳ, NoTangent()
+            return NoTangent(), ȳ_val, NoTangent()
         end
 
         # Sum-reduce gradients back to root
-        x̄ = similar(ȳ)
-        MPI.Reduce!(ȳ, x̄, MPI.SUM, info.root_rank, info.union_comm)
+        x̄ = similar(ȳ_val)
+        MPI.Reduce!(ȳ_val, x̄, MPI.SUM, info.root_rank, info.union_comm)
 
         if !info.src_active
             x̄ = ZeroTangent()

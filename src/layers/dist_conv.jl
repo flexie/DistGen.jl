@@ -35,6 +35,8 @@ struct DistConv3d
     dilation::NTuple{3, Int}
     halo_info::HaloInfo
     use_bias::Bool
+    weight_norm::Bool       # Karras forced weight normalization
+    concat_ones::Bool       # Prepend ones channel (Karras input block)
 end
 
 """
@@ -52,7 +54,9 @@ function DistConv3d(
     kernel_size::NTuple{3, Int};
     stride::NTuple{3, Int} = (1, 1, 1),
     dilation::NTuple{3, Int} = (1, 1, 1),
-    bias::Bool = true
+    bias::Bool = true,
+    weight_norm::Bool = false,
+    concat_ones::Bool = false
 )
     # Compute halo sizes from convolution parameters
     # For a convolution with kernel k and dilation d:
@@ -67,44 +71,105 @@ function DistConv3d(
 
     halo_info = compute_halo_info(P, halo_sizes)
 
-    return DistConv3d(P, in_channels, out_channels, kernel_size, stride, dilation, halo_info, bias)
+    return DistConv3d(P, in_channels, out_channels, kernel_size, stride, dilation,
+                      halo_info, bias, weight_norm, concat_ones)
 end
 
 """
-    dist_conv3d_forward(x, weight, bias, layer::DistConv3d)
+    pad_for_halo(x, halo_info)
+
+Auto-pad a tensor with zeros to add halo space for halo exchange.
+Takes unpadded `(W,H,D,C,B)` → padded with bulk centered, zeros in ghost region.
+If the tensor already has halo space (detected by matching expected padded size), returns as-is.
+"""
+function pad_for_halo(x::AbstractArray{T, 5}, halo_info::HaloInfo{N}) where {T, N}
+    spatial_ndims = min(N, 3)
+    needs_padding = false
+    for d in 1:spatial_ndims
+        left, right = halo_info.halo_sizes[d]
+        if left > 0 || right > 0
+            needs_padding = true
+            break
+        end
+    end
+    !needs_padding && return x
+
+    # Functional zero-padding (Zygote-compatible — no mutation)
+    # Pad each spatial dimension sequentially using cat with zero slabs
+    y = x
+    for d in 1:spatial_ndims
+        left, right = halo_info.halo_sizes[d]
+        sz = size(y)
+        if left > 0
+            pad_sz = ntuple(i -> i == d ? left : sz[i], 5)
+            y = cat(zeros(T, pad_sz...), y; dims=d)
+        end
+        if right > 0
+            sz = size(y)
+            pad_sz = ntuple(i -> i == d ? right : sz[i], 5)
+            y = cat(y, zeros(T, pad_sz...); dims=d)
+        end
+    end
+    return y
+end
+
+"""
+    dist_conv3d_forward(x, weight, bias, layer::DistConv3d; auto_pad=false)
 
 Forward pass:
-1. Halo exchange on spatial dimensions
-2. Local convolution (NNlib.conv)
-3. Trim output to correct size
+1. Optionally auto-pad input (add halo space if `auto_pad=true`)
+2. Halo exchange on spatial dimensions
+3. Local convolution (NNlib.conv)
 
-`x` shape: (W, H, D, C_in, batch) — local spatial dims with halo space
+`x` shape: (W, H, D, C_in, batch) — local spatial dims
+  - If `auto_pad=false` (default): x must already include halo space
+  - If `auto_pad=true`: x is unpadded bulk data, halo is added automatically
 `weight` shape: (kW, kH, kD, C_in, C_out) — full convolution kernel
 """
 function dist_conv3d_forward(
     x::AbstractArray{T, 5},
     weight::AbstractArray{T, 5},
     bias::Union{AbstractArray{T, 1}, Nothing},
-    layer::DistConv3d
+    layer::DistConv3d;
+    auto_pad::Bool = false
 ) where {T}
-    # Step 1: Halo exchange to fill ghost regions
+    # Step 0: Concat ones channel if needed (Karras input block protection)
+    if layer.concat_ones
+        sz = size(x)
+        ones_ch = ones(T, sz[1], sz[2], sz[3], 1, sz[5])
+        x = cat(ones_ch, x; dims=4)
+    end
+
+    # Step 1: Auto-pad for halo if requested
+    if auto_pad
+        x = pad_for_halo(x, layer.halo_info)
+    end
+
+    # Step 2: Halo exchange to fill ghost regions
     x_exchanged = halo_exchange(x, layer.halo_info)
 
-    # Step 2: Local convolution (NNlib expects WHDC format with no padding since
+    # Step 3: Apply weight normalization if enabled (Karras Algorithm 1)
+    w = if layer.weight_norm
+        fan_in = T(layer.in_channels + (layer.concat_ones ? 1 : 0)) * T(prod(layer.kernel_size))
+        normalize_weight(weight) ./ sqrt(fan_in)
+    else
+        weight
+    end
+
+    # Step 4: Local convolution (NNlib expects WHDC format with no padding since
     # halo exchange already provides the necessary spatial context)
-    # DenseConvDims expects: (spatial..., C_in, batch) and (spatial..., C_in, C_out)
     cdims = NNlib.DenseConvDims(
-        size(x_exchanged), size(weight);
+        size(x_exchanged), size(w);
         stride=collect(layer.stride),
         dilation=collect(layer.dilation),
         padding=ntuple(_ -> 0, 6)  # No additional padding — halos provide it
     )
-    y = conv(x_exchanged, weight, cdims)
+    y = conv(x_exchanged, w, cdims)
 
-    # Step 3: Add bias if present
+    # Step 5: Add bias if present
     if bias !== nothing
         # Reshape bias for broadcasting: (1, 1, 1, C_out, 1)
-        y .+= reshape(bias, 1, 1, 1, :, 1)
+        y = y .+ reshape(bias, 1, 1, 1, :, 1)
     end
 
     return y
@@ -116,10 +181,11 @@ end
 Initialize parameters for distributed convolution (Kaiming/He initialization).
 """
 function init_dist_conv3d(rng, layer::DistConv3d; T::Type=Float32)
-    fan_in = layer.in_channels * prod(layer.kernel_size)
+    c_in = layer.in_channels + (layer.concat_ones ? 1 : 0)
+    fan_in = c_in * prod(layer.kernel_size)
     std = sqrt(T(2) / T(fan_in))
 
-    weight = randn(rng, T, layer.kernel_size..., layer.in_channels, layer.out_channels) .* std
+    weight = randn(rng, T, layer.kernel_size..., c_in, layer.out_channels) .* std
 
     bias = layer.use_bias ? zeros(T, layer.out_channels) : nothing
 

@@ -41,12 +41,20 @@ export balanced_decomposition, subtensor_indices, compute_overlaps, local_shape,
 # Exports — Device utilities
 export device_array, device_copy!
 
+# Exports — Layer 2: Magnitude-preserving operations (Karras)
+export mp_silu, mp_add, mp_cat, pixel_norm, normalize_weight, mp_fourier_embedding
+
 # Exports — Layer 2: Distributed NN layers
-export DistConv3d, dist_conv3d_forward, init_dist_conv3d
+export DistConv3d, dist_conv3d_forward, init_dist_conv3d, pad_for_halo
 export DistGroupNorm, DistAdaptiveGroupNorm, dist_groupnorm_forward
 export DistDownsample, DistUpsample
+export DistInterpolateDown, DistInterpolateUp
 export DistLinear, DistSkipConnection
 export DistUNet3d, PartitionPlan, plan_partitions
+export DistKarrasEncoder, DistKarrasDecoder, DistKarrasUNet3d
+export dist_karras_encoder_forward, dist_karras_decoder_forward
+export dist_karras_unet_forward, edm_precond_forward
+export init_dist_karras_encoder, init_dist_karras_decoder, init_dist_karras_unet
 export sinusoidal_embedding
 export score_based_diffusion_loss, flow_matching_loss
 export langevin_sample, ode_sample

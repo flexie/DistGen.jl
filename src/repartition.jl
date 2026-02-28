@@ -238,6 +238,7 @@ function ChainRulesCore.rrule(::typeof(repartition_op), x::AbstractArray{T}, inf
     y = repartition_op(x, info)
 
     function repartition_pullback(ȳ)
+        ȳ_val = ChainRulesCore.unthunk(ȳ)
         # Reverse repartition: dst → src
         reverse_info = RepartitionInfo{N}(
             info.dst_partition,
@@ -249,7 +250,7 @@ function ChainRulesCore.rrule(::typeof(repartition_op), x::AbstractArray{T}, inf
             info.dst_active,
             info.src_active,
         )
-        x̄ = repartition_op(ȳ, reverse_info)
+        x̄ = repartition_op(ȳ_val, reverse_info)
         return NoTangent(), x̄, NoTangent()
     end
 

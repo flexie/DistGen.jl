@@ -58,13 +58,14 @@ function ChainRulesCore.rrule(::typeof(all_reduce_op), x::AbstractArray{T}, info
     y = all_reduce_op(x, info)
 
     function all_reduce_pullback(ȳ)
+        ȳ_val = ChainRulesCore.unthunk(ȳ)
         if !info.partition.active
-            return NoTangent(), ȳ, NoTangent()
+            return NoTangent(), ȳ_val, NoTangent()
         end
 
         # Self-adjoint: apply same all-reduce to gradient
-        x̄ = similar(ȳ)
-        MPI.Allreduce!(ȳ, x̄, info.op, info.partition.comm)
+        x̄ = similar(ȳ_val)
+        MPI.Allreduce!(ȳ_val, x̄, info.op, info.partition.comm)
 
         return NoTangent(), x̄, NoTangent()
     end

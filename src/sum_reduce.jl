@@ -68,12 +68,13 @@ function ChainRulesCore.rrule(::typeof(sum_reduce_op), x::AbstractArray{T}, info
     y = sum_reduce_op(x, info)
 
     function sum_reduce_pullback(ȳ)
+        ȳ_val = ChainRulesCore.unthunk(ȳ)
         if info.union_comm == MPI.COMM_NULL
-            return NoTangent(), ȳ, NoTangent()
+            return NoTangent(), ȳ_val, NoTangent()
         end
 
         # Broadcast gradient from root to all source workers
-        x̄ = copy(ȳ)
+        x̄ = copy(ȳ_val)
         MPI.Bcast!(x̄, info.root_rank, info.union_comm)
 
         return NoTangent(), x̄, NoTangent()
